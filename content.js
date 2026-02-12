@@ -1,12 +1,11 @@
 // content.js
 
 function createTriggerButton() {
-  // Prevent duplicate buttons
   if (document.getElementById('linkedin-pdf-trigger-btn')) return;
 
   const btn = document.createElement('button');
   btn.id = 'linkedin-pdf-trigger-btn';
-  btn.innerHTML = '⬇️ PDF Resume';
+  btn.innerHTML = '⬇️ Open PDF';
   
   // Styling
   Object.assign(btn.style, {
@@ -15,106 +14,93 @@ function createTriggerButton() {
     right: '20px',
     zIndex: '9999',
     padding: '12px 24px',
-    backgroundColor: '#0a66c2', // LinkedIn Blue
+    backgroundColor: '#0a66c2',
     color: 'white',
     border: 'none',
     borderRadius: '24px',
     fontWeight: '600',
     cursor: 'pointer',
     boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-    fontFamily: '-apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto',
     fontSize: '14px',
-    transition: 'all 0.2s ease'
+    fontFamily: 'sans-serif'
   });
 
-  // Hover effects
-  btn.onmouseover = () => btn.style.transform = 'scale(1.05)';
-  btn.onmouseout = () => btn.style.transform = 'scale(1)';
-
-  // Attach the click handler
-  btn.onclick = executeDownloadSequence;
-
+  btn.onclick = executeSmartDownload;
   document.body.appendChild(btn);
 }
 
-function executeDownloadSequence() {
+function executeSmartDownload() {
   const btn = document.getElementById('linkedin-pdf-trigger-btn');
-  btn.innerText = 'Searching...';
-  btn.style.backgroundColor = '#555'; // Grey out button while working
+  btn.innerText = '👀 Finding Menu...';
 
-  // ---------------------------------------------------------
-  // STEP 1: Find and Click the "More" Button
-  // Target the specific container provided: data-view-name="profile-overflow-button"
-  // ---------------------------------------------------------
+  // --- CRITICAL FIX: Tell background.js to watch for the next PDF ---
+  chrome.runtime.sendMessage({ action: "expecting_pdf" });
+  // ----------------------------------------------------------------
+
+  // 1. Find the "More" button container
   const moreButtonContainer = document.querySelector('div[data-view-name="profile-overflow-button"]');
   const moreButton = moreButtonContainer ? moreButtonContainer.querySelector('button') : null;
 
   if (!moreButton) {
-    console.error('Could not find "More" button container.');
-    btn.innerText = '❌ Button Not Found';
+    btn.innerText = '❌ "More" Button Missing';
+    console.error('Could not find the "More" button container.');
     setTimeout(() => resetBtn(btn), 2000);
     return;
   }
 
-  // Click the "More" button to open the dropdown
+  // 2. Click "More"
   moreButton.click();
-  btn.innerText = 'Opening Menu...';
+  btn.innerText = '⏳ Waiting...';
 
-  // ---------------------------------------------------------
-  // STEP 2: Wait for Menu & Click "Save to PDF"
-  // ---------------------------------------------------------
-  // We wait 100ms for the menu to render in the DOM
-  setTimeout(() => {
-    // Find all 'p' tags (since your snippet shows the text is inside a <p>)
-    const paragraphs = Array.from(document.querySelectorAll('div[role="menuitem"] p'));
+  // 3. Smart Poller: Check every 100ms for "Save to PDF"
+  let attempts = 0;
+  const maxAttempts = 30; // 3 seconds max
+
+  const interval = setInterval(() => {
+    attempts++;
     
-    // Find the one containing "Save to PDF"
-    const pdfTextNode = paragraphs.find(p => p.innerText.trim() === 'Save to PDF');
+    // Find text "Save to PDF"
+    const allParagraphs = Array.from(document.querySelectorAll('.artdeco-dropdown__content p, div[role="menuitem"] p'));
+    const pdfTextNode = allParagraphs.find(p => p.innerText.trim().includes('Save to PDF'));
 
     if (pdfTextNode) {
-      // Vital: We usually need to click the 'menuitem' container, not just the text.
-      // We look for the closest parent with role="menuitem"
-      const clickableMenuItem = pdfTextNode.closest('div[role="menuitem"]');
+      clearInterval(interval);
       
-      if (clickableMenuItem) {
-        clickableMenuItem.click();
-        btn.innerText = '✅ Downloading';
-        btn.style.backgroundColor = '#057642'; // Green
-        
-        // Reset button after 3 seconds
-        setTimeout(() => resetBtn(btn), 3000);
-      } else {
-        // Fallback: try clicking the text node directly if parent finding fails
-        pdfTextNode.click();
-        btn.innerText = '✅ Clicked Text';
-      }
-    } else {
-      console.error('"Save to PDF" text not found in menu items.');
-      btn.innerText = '❌ PDF Option Missing';
-      // Close the menu so it doesn't stay stuck open
-      moreButton.click();
+      // Click the parent menu item
+      const clickableItem = pdfTextNode.closest('div[role="menuitem"]') || pdfTextNode;
+      clickableItem.click();
+      
+      btn.innerText = '✅ Opening...';
+      btn.style.backgroundColor = '#057642'; // Green
+
+      setTimeout(() => resetBtn(btn), 3000);
+      
+      // Close menu if needed
+      setTimeout(() => {
+        if (document.querySelector('.artdeco-dropdown--is-open')) {
+            moreButton.click(); 
+        }
+      }, 1000);
+
+    } else if (attempts >= maxAttempts) {
+      clearInterval(interval);
+      console.error("Timed out finding 'Save to PDF'");
+      btn.innerText = '❌ Timeout';
+      moreButton.click(); // Close menu
       setTimeout(() => resetBtn(btn), 2000);
     }
-  }, 500); // 500ms delay is usually safe for LinkedIn's React render speed
+  }, 100);
 }
 
 function resetBtn(btn) {
-  btn.innerText = '⬇️ PDF Resume';
+  btn.innerText = '⬇️ Open PDF';
   btn.style.backgroundColor = '#0a66c2';
 }
 
-// ---------------------------------------------------------
-// Mutation Observer
-// ---------------------------------------------------------
-// Keeps the button on screen even if LinkedIn does a soft-navigation (SPA)
 const observer = new MutationObserver((mutations) => {
   if (!document.getElementById('linkedin-pdf-trigger-btn')) {
     createTriggerButton();
   }
 });
-
-// Start observing
 observer.observe(document.body, { childList: true, subtree: true });
-
-// Initial run
 createTriggerButton();
