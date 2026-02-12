@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "LinkedIn PDF Trigger",
+  "version": "1.0",
+  "description": "One-click button to trigger LinkedIn's 'Save to PDF' feature.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.linkedin.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://www.linkedin.com/in/*"],
+      "js": ["content.js"]
+    }
+  ]
+}
